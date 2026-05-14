@@ -1,28 +1,20 @@
 import os
-import sys
 import winreg
 
 
-def install():
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    main_py = os.path.join(script_dir, "main.py")
-    bin_dir = os.path.join(script_dir, "bin")
+def normalize_path(path):
+    return os.path.normcase(os.path.normpath(path))
 
-    # Ensure the bin directory exists
-    if not os.path.exists(bin_dir):
-        os.makedirs(bin_dir)
 
-    bat_path = os.path.join(bin_dir, "utils.bat")
-
-    # We overwrite this every time to ensure that if you moved the project,
-    # the global command points to the new location.
+def write_wrapper(main_py, bat_path):
     print(f"Updating global command wrapper at: {bat_path}")
     with open(bat_path, "w") as f:
         f.write(f'@echo off\npython "{main_py}" %*')
 
+
+def refresh_user_path(bin_dir):
     print("Refreshing System PATH for current user...")
     try:
-        # Open the User Environment key
         reg_key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r'Environment', 0, winreg.KEY_ALL_ACCESS)
 
         try:
@@ -30,17 +22,35 @@ def install():
         except FileNotFoundError:
             path_value = ""
 
-        # Check if our bin_dir is already there. If not, add it.
-        # We normalize paths to prevent "C:/path" vs "C:\path" duplicates.
-        norm_bin = os.path.normpath(bin_dir)
-        current_paths = [os.path.normpath(p) for p in path_value.split(';') if p.strip()]
+        current_paths = [p.strip() for p in path_value.split(';') if p.strip()]
+        norm_bin = normalize_path(bin_dir)
+        new_paths = []
+        removed_old = False
 
-        if norm_bin not in current_paths:
-            new_path = f"{path_value};{norm_bin}".replace(";;", ";")
-            winreg.SetValueEx(reg_key, 'Path', 0, winreg.REG_EXPAND_SZ, new_path)
-            print("\nSUCCESS: 'utils' has been added to your PATH!")
+        for path in current_paths:
+            norm_path = normalize_path(path)
+            if norm_path == norm_bin:
+                if path not in new_paths:
+                    new_paths.append(path)
+                continue
+
+            if os.path.basename(norm_path) == 'bin' and os.path.basename(os.path.dirname(norm_path)).lower() == 'organizer':
+                removed_old = True
+                continue
+
+            if path not in new_paths:
+                new_paths.append(path)
+
+        if norm_bin not in [normalize_path(p) for p in new_paths]:
+            new_paths.append(bin_dir)
+
+        new_path_value = ";".join(new_paths)
+        winreg.SetValueEx(reg_key, 'Path', 0, winreg.REG_EXPAND_SZ, new_path_value)
+
+        if removed_old:
+            print("\nRemoved stale Organizer PATH entries and refreshed the current install.")
         else:
-            print("\nUPDATE: 'utils' is already in your PATH. Wrapper has been refreshed.")
+            print("\nPATH refreshed for the current install.")
 
         print("\n" + "=" * 50)
         print("INSTALLATION COMPLETE")
@@ -52,6 +62,19 @@ def install():
     except Exception as e:
         print(f"Error updating PATH: {e}")
         print("Try running the terminal as Administrator if this fails.")
+
+
+def install():
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    main_py = os.path.join(script_dir, "main.py")
+    bin_dir = os.path.join(script_dir, "bin")
+
+    if not os.path.exists(bin_dir):
+        os.makedirs(bin_dir)
+
+    bat_path = os.path.join(bin_dir, "utils.bat")
+    write_wrapper(main_py, bat_path)
+    refresh_user_path(bin_dir)
 
 
 if __name__ == "__main__":
