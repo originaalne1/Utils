@@ -257,4 +257,4 @@ if __name__ == "__main__":
     elif user_choice == "dummy":
         command_dummy()
     else:
-        print(f"Choose a right choice you fucking idiot sandwich, {username}!")
+        print(f"Choose a right choice you fucking idiot, {username}!")
