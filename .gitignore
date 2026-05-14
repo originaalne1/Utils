@@ -1,0 +1,18 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Personal data
+todo.txt
+organizer_log.txt
+
+# OS-specific files
+.DS_Store
+desktop.ini
+
+bin
