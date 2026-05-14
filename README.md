@@ -11,4 +11,7 @@
 - `utils log <count>` — show the last N log entries
 - `utils find <keyword> [path]` — search for files by name
 - `utils status [path]` — report file category counts in a folder
+- `utils cleanup [path]` — remove empty folders
+- `utils backup [path]` — create a zip backup of a folder or file
+- `utils stats [path]` — show counts and total sizes by category
 - `utils organize --report` — show a summary after organizing

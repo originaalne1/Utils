@@ -4,7 +4,7 @@ import shutil
 import random
 from datetime import datetime
 
-all_commands = ("help", "todo", "organize", "dummy", "log", "find", "status")
+all_commands = ("help", "todo", "organize", "dummy", "log", "find", "status", "cleanup", "backup", "stats")
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 TODO_FILE = os.path.join(SCRIPT_DIR, "todo.txt")
 LOG_FILE = os.path.join(SCRIPT_DIR, "organizer_log.txt")
@@ -70,7 +70,7 @@ def command_help():
     print("  utils organize .                -> Organize current folder in-place")
     print("  utils organize <src>            -> Organize specific folder to default target")
     print("  utils organize <src> <target>   -> Organize to specific target")
-    print("  Flags: --safe, --dry-run")
+    print("  Flags: --safe, --dry-run, --report")
 
     print("\nTodo Pattern:")
     print("  utils todo                      -> Show all")
@@ -87,6 +87,9 @@ def command_help():
     print("  utils log <count>              -> Show last N log entries")
     print("  utils find <keyword> [path]    -> Search files by name")
     print("  utils status [path]            -> Show file category counts")
+    print("  utils cleanup [path]           -> Remove empty folders")
+    print("  utils backup [path]            -> Create a zip backup")
+    print("  utils stats [path]             -> Show counts and sizes")
     print("  Flags for organize: --safe, --dry-run, --report")
 
 
@@ -221,6 +224,103 @@ def summarize_folder(path):
                     break
             summary[category] = summary.get(category, 0) + 1
     return summary
+
+
+def get_category_for_extension(ext):
+    for category, extensions in EXTENSIONS.items():
+        if ext in extensions:
+            return category
+    return "others"
+
+
+def format_size(num_bytes):
+    for unit in ["B", "KB", "MB", "GB"]:
+        if num_bytes < 1024:
+            return f"{num_bytes:.1f} {unit}"
+        num_bytes /= 1024
+    return f"{num_bytes:.1f} TB"
+
+
+def scan_folder(path):
+    summary = {}
+    total_size = 0
+    for root, _, files in os.walk(path):
+        for filename in files:
+            filepath = os.path.join(root, filename)
+            try:
+                file_size = os.path.getsize(filepath)
+            except OSError:
+                continue
+            ext = os.path.splitext(filename)[1].lower()
+            category = get_category_for_extension(ext)
+            data = summary.get(category, {"count": 0, "size": 0})
+            data["count"] += 1
+            data["size"] += file_size
+            summary[category] = data
+            total_size += file_size
+    return summary, total_size
+
+
+def command_stats():
+    path = sys.argv[2] if len(sys.argv) >= 3 else DEFAULT_DOWNLOADS
+    if not os.path.exists(path):
+        print(f"Path not found: {path}")
+        return
+
+    summary, total_size = scan_folder(path)
+    print(f"\nStats for: {path}")
+    border()
+    for category, data in sorted(summary.items(), key=lambda item: (-item[1]["count"], item[0])):
+        print(f"{category.title():<15}: {data['count']:<5} {format_size(data['size']):>10}")
+    border()
+    print(f"Total files: {sum(data['count'] for data in summary.values())}")
+    print(f"Total size : {format_size(total_size)}")
+
+
+def command_cleanup():
+    path = sys.argv[2] if len(sys.argv) >= 3 else DEFAULT_DOWNLOADS
+    if not os.path.exists(path):
+        print(f"Path not found: {path}")
+        return
+
+    removed = 0
+    for root, dirs, _ in os.walk(path, topdown=False):
+        for dirname in dirs:
+            folder_path = os.path.join(root, dirname)
+            try:
+                if not os.listdir(folder_path):
+                    os.rmdir(folder_path)
+                    print(f"Removed empty folder: {folder_path}")
+                    removed += 1
+            except OSError:
+                pass
+
+    if removed == 0:
+        print("No empty folders found.")
+    else:
+        print(f"Removed {removed} empty folders.")
+
+
+def command_backup():
+    source = sys.argv[2] if len(sys.argv) >= 3 else "."
+    if not os.path.exists(source):
+        print(f"Path not found: {source}")
+        return
+
+    backup_dir = os.path.join(SCRIPT_DIR, "backups")
+    if not os.path.exists(backup_dir):
+        os.makedirs(backup_dir)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    base_name = os.path.basename(os.path.abspath(source).rstrip(os.sep)) or "backup"
+    archive_path = os.path.join(backup_dir, f"{base_name}_{timestamp}")
+
+    if os.path.isdir(source):
+        shutil.make_archive(archive_path, "zip", source)
+    else:
+        archive = shutil.make_archive(archive_path, "zip", root_dir=os.path.dirname(source), base_dir=os.path.basename(source))
+
+    print(f"Backup created: {archive_path}.zip")
 
 
 def command_status():
@@ -365,5 +465,11 @@ if __name__ == "__main__":
         command_find()
     elif user_choice == "status":
         command_status()
+    elif user_choice == "cleanup":
+        command_cleanup()
+    elif user_choice == "backup":
+        command_backup()
+    elif user_choice == "stats":
+        command_stats()
     else:
-        print(f"Choose a right choice you fucking idiot {username}!")
+        print(f"Choose a right choice you fucking idiot, {username}!")
