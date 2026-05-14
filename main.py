@@ -4,7 +4,7 @@ import shutil
 import random
 from datetime import datetime
 
-all_commands = ("help", "todo", "organize", "dummy")
+all_commands = ("help", "todo", "organize", "dummy", "log", "find", "status")
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 TODO_FILE = os.path.join(SCRIPT_DIR, "todo.txt")
 LOG_FILE = os.path.join(SCRIPT_DIR, "organizer_log.txt")
@@ -82,6 +82,13 @@ def command_help():
     print("  utils dummy                     -> Create 10 test files here")
     print("  utils dummy <count>             -> Create X test files here")
 
+    print("\nUtility Helpers:")
+    print("  utils log                      -> Show last 20 log entries")
+    print("  utils log <count>              -> Show last N log entries")
+    print("  utils find <keyword> [path]    -> Search files by name")
+    print("  utils status [path]            -> Show file category counts")
+    print("  Flags for organize: --safe, --dry-run, --report")
+
 
 def load_tasks():
     if not os.path.exists(TODO_FILE): return []
@@ -148,7 +155,92 @@ def command_dummy():
     border()
 
 
-def organize_files(source_dir, target_dir, safe_mode=False, dry_run=False):
+def load_log_entries(count=20):
+    if not os.path.exists(LOG_FILE):
+        return []
+    with open(LOG_FILE, "r") as f:
+        lines = [line.rstrip("\n") for line in f.readlines()]
+    return lines[-count:]
+
+
+def command_log():
+    count = 20
+    if len(sys.argv) >= 3:
+        try:
+            count = int(sys.argv[2])
+        except ValueError:
+            pass
+
+    entries = load_log_entries(count)
+    if not entries:
+        print("No log entries found.")
+        return
+
+    print(f"\n--- Last {len(entries)} log entries ---\n")
+    for item in entries:
+        print(item)
+
+
+def command_find():
+    if len(sys.argv) < 3:
+        print("Usage: utils find <keyword> [path]")
+        return
+
+    keyword = sys.argv[2]
+    path = sys.argv[3] if len(sys.argv) >= 4 else "."
+
+    if not os.path.exists(path):
+        print(f"Path not found: {path}")
+        return
+
+    print(f"Searching for '{keyword}' in {path}...")
+    matches = []
+    for root, _, files in os.walk(path):
+        for filename in files:
+            if keyword.lower() in filename.lower():
+                matches.append(os.path.join(root, filename))
+
+    if not matches:
+        print(f"No files found matching '{keyword}'.")
+        return
+
+    print(f"Found {len(matches)} files:")
+    for match in matches:
+        print(match)
+
+
+def summarize_folder(path):
+    summary = {}
+    for root, _, files in os.walk(path):
+        for filename in files:
+            ext = os.path.splitext(filename)[1].lower()
+            category = "others"
+            for cat, extensions in EXTENSIONS.items():
+                if ext in extensions:
+                    category = cat
+                    break
+            summary[category] = summary.get(category, 0) + 1
+    return summary
+
+
+def command_status():
+    path = sys.argv[2] if len(sys.argv) >= 3 else DEFAULT_DOWNLOADS
+    if not os.path.exists(path):
+        print(f"Path not found: {path}")
+        return
+
+    summary = summarize_folder(path)
+    total = sum(summary.values())
+
+    print(f"\nStatus for: {path}")
+    border()
+    for category, count in sorted(summary.items(), key=lambda item: (-item[1], item[0])):
+        print(f"{category.title():<15}: {count}")
+    border()
+    print(f"Total files: {total}")
+
+
+def organize_files(source_dir, target_dir, safe_mode=False, dry_run=False, report=False):
     if dry_run: print("!!! DRY RUN MODE ENABLED !!!")
 
     # Critical: Normalize paths to handle relative '.' input
@@ -167,6 +259,7 @@ def organize_files(source_dir, target_dir, safe_mode=False, dry_run=False):
     protected_folders.update(["others", "folders", "review_large_files", "bin"])
 
     files_moved = 0
+    category_counts = {}
 
     for filename in os.listdir(source_dir):
         file_path = os.path.join(source_dir, filename)
@@ -217,16 +310,26 @@ def organize_files(source_dir, target_dir, safe_mode=False, dry_run=False):
                 print(f"Moved [{category.upper()}]: {filename}")
                 log_action(f"Moved {filename} to {category}")
                 files_moved += 1
+
+            category_counts[category] = category_counts.get(category, 0) + 1
         except Exception as e:
             print(f"Error moving {filename}: {e}")
 
     border()
     print(f"Complete! Items processed: {files_moved}")
 
+    if report:
+        print("\nOrganize Summary")
+        border()
+        for category, count in sorted(category_counts.items(), key=lambda item: (-item[1], item[0])):
+            print(f"{category.title():<20}: {count}")
+        border()
+
 
 def command_organize():
     safe = "--safe" in sys.argv
     dry = "--dry-run" in sys.argv
+    report = "--report" in sys.argv
     clean_args = [arg for arg in sys.argv[2:] if not arg.startswith("--")]
 
     source = clean_args[0] if len(clean_args) > 0 else DEFAULT_DOWNLOADS
@@ -237,7 +340,7 @@ def command_organize():
         target = clean_args[1] if len(clean_args) > 1 else DEFAULT_TARGET
 
     clear_terminal()
-    organize_files(source, target, safe_mode=safe, dry_run=dry)
+    organize_files(source, target, safe_mode=safe, dry_run=dry, report=report)
 
 
 if __name__ == "__main__":
@@ -256,5 +359,11 @@ if __name__ == "__main__":
         command_organize()
     elif user_choice == "dummy":
         command_dummy()
+    elif user_choice == "log":
+        command_log()
+    elif user_choice == "find":
+        command_find()
+    elif user_choice == "status":
+        command_status()
     else:
-        print(f"Choose a right choice you fucking idiot, {username}!")
+        print(f"Choose a right choice you fucking idiot {username}!")
